@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
+import os
+import uuid
 
 app = FastAPI()
 
@@ -11,6 +14,9 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 posts = [
     {
         "id": 1,
@@ -18,33 +24,64 @@ posts = [
         "description": "Pao gostosão",
         "author": "Kaayo",
         "content": "ABC",
-        "category": 0
+        "category": 0,
+        "image_url": None
     }
 ]
 
-class Post(BaseModel):
+class PostBase(BaseModel):
     title: str
     description: str
     author: str
     content: str
     category: int
+    image_url: Optional[str] = None
 
 @app.post("/post")
-def create_post(post: Post):
+async def create_post(
+    title: str = Form(...),
+    description: str = Form(...),
+    author: str = Form(...),
+    content: str = Form(...),
+    category: int = Form(...),
+    image: Optional[UploadFile] = File(None)
+):
+
+    image_url = None
+    if image:
+        file_ext = image.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{file_ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        
+        # Salva o arquivo
+        with open(filepath, "wb") as buffer:
+            buffer.write(await image.read())
+        
+        image_url = f"/{UPLOAD_DIR}/{filename}"
+
     new_id = posts[-1]["id"] + 1 if posts else 1
-    new_post = post.model_dump()
-    new_post["id"] = new_id
+    new_post = {
+        "id": new_id,
+        "title": title,
+        "description": description,
+        "author": author,
+        "content": content,
+        "category": category,
+        "image_url": image_url
+    }
+    
     posts.append(new_post)
-    print(post)
-    print(new_post)
-    print(posts)
-    return {"Message": "Post adicionado com sucesso!", "post": post}
+    
+    return {
+        "message": "Post criado com sucesso!",
+        "post": new_post
+    }
 
 @app.get("/posts")
 def get_all_posts():
     return posts
 
-@app.patch("/post/{post_id}")
+@app.put("/post/{post_id}")
 def update_post(post_id: int, updated_data: dict):
     post_to_update = next((p for p in posts if p["id"] == post_id), None)
     
@@ -65,3 +102,5 @@ def delete_post(post_id: int):
         "message": "Post deletado com sucesso",
         "deleted_post": deleted_post
     }
+
+
